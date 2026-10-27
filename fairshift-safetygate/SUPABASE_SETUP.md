@@ -1,36 +1,49 @@
-# Supabase setup for FairShift
+# FairShift cloud pilot setup
 
-The current frontend runs in **Local Demo** mode. Its role buttons are simulated and its reports are stored in the browser. The SQL schema is a secure starting point for cloud development; applying it does not connect the current frontend or enable cross-device sync. Do not use demo role switching as authorization for real records.
+FairShift starts in **Local Demo** mode. Cloud mode appears after a user signs in with an assigned Supabase Auth account. Local reports are never copied to the cloud automatically. Use a fresh, single-workplace pilot project; this schema does not yet isolate multiple organizations.
 
-## Project and keys
+## 1. Database and private storage
 
-1. Create a private Supabase project intended for this app.
-2. In the Supabase SQL editor, run [schema.sql](schema.sql). It enables row-level security (RLS) and grants no report or media policies. Confirm that querying `hazards`, `hazard_events`, and `hazard_media` through the publishable key returns no rows.
-3. Obtain the Project URL and **publishable/anon** key from Project Settings → API Keys. Keep the service-role/secret key off the frontend and out of Git. The project owner will provide the URL and publishable key separately.
-4. When a cloud client with authenticated policies is implemented, use a local `.env.local` file for `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Add `.env.local` to `.gitignore`. Vite variables are exposed to browser users, so these variables must never contain a service-role/secret key.
+In your Supabase project's **SQL Editor**, run these files in order, using their complete contents:
 
-## Authentication and roles
+1. [schema.sql](schema.sql) creates the base tables and enables row-level security (RLS) with no public policies.
+2. [cloud_setup.sql](cloud_setup.sql) adds authenticated read rules, role-checked write functions, private media policies, and the Realtime publication. It creates the private `hazard-evidence` bucket with a 10 MB object limit.
 
-1. In Supabase Authentication, create or invite separate test users for worker, supervisor, and safety reviewer. Give each a unique login. Disable public signups for the pilot unless the organization has an approved onboarding process.
-2. In Authentication → Users, copy each user's UUID. From the **SQL editor**, insert role assignments, substituting real UUIDs:
+The SQL Editor runs as an administrator. Do not add broad anonymous or authenticated write policies to these tables. The frontend calls only the guarded functions for changes; direct table writes are revoked. `hazard_events`, `corrective_actions`, `verifications`, and `physical_protection_actions` remain inaccessible for direct client mutation.
 
-   ```sql
-   insert into public.app_user_roles (user_id, role) values
-     ('WORKER_AUTH_UUID', 'worker'),
-     ('SUPERVISOR_AUTH_UUID', 'supervisor'),
-     ('REVIEWER_AUTH_UUID', 'reviewer');
-   ```
+## 2. Create pilot users and assign roles
 
-3. Keep `app_user_roles` writable only by trusted administrators. Do not create a policy that lets users assign or change their own role. A production deployment also needs a site or organization membership model before reports from different workplaces are stored in one project.
-4. Implement server-side functions or constrained database RPCs for `acknowledge`, `start_action`, `complete_action`, `record_protection`, `verify`, and `raise_concern`. Each operation must check `auth.uid()`, the role, workplace membership, current status, required fields, and expected version in one transaction. Only the reviewer operation may set `Verified Closed`; it must reject the same user who performed the corrective action.
-5. Give workers access to only reports they submitted or know through a separate secure tracking flow. An anonymous report must not reveal identity through table joins, logs, or media paths. The demo tracking code is not suitable as a production bearer credential; store a hash, rate-limit lookup, and scope the response.
+In **Authentication → Users**, create or invite three distinct test users: one worker, one supervisor, and one safety reviewer. Give each a unique login. Confirm each user can sign in. Public signup should remain disabled unless you have an approved onboarding process.
 
-## Private evidence storage
+Copy each user's UUID and run this in the SQL Editor, replacing the placeholders:
 
-1. Create a Supabase Storage bucket such as `hazard-evidence` with **Public bucket** turned off and file-size/type limits for photos and audio.
-2. Keep `hazard_media.storage_path` private. Restrict upload/download policies by authenticated role, workplace membership, and report ownership. Use short-lived signed URLs for authorized playback and images. Never expose a public bucket URL for worker audio or photos.
-3. Store media metadata in `hazard_media` only after the private object upload succeeds; if metadata creation fails, remove the orphaned object through a trusted cleanup process. Do not show a success receipt until the report and all required media are committed.
+~~~sql
+insert into public.app_user_roles (user_id, role) values
+  ('WORKER_AUTH_UUID', 'worker'),
+  ('SUPERVISOR_AUTH_UUID', 'supervisor'),
+  ('REVIEWER_AUTH_UUID', 'reviewer')
+on conflict (user_id) do update set role = excluded.role;
+~~~
 
-## Realtime and acceptance gate
+Only the SQL Editor or a trusted administrator should assign roles. No browser policy lets users change their role. Do not send passwords or secret/service-role keys in chat.
 
-After authenticated RLS and transitions are implemented, subscribe only to records visible to the current user. Add manual refresh for reconnects, and show explicit write or subscription failures. Test worker phone → supervisor laptop → reviewer device → worker phone with separate accounts and a fresh private browser. Confirm that an unauthenticated or wrong-role session cannot list reports, access media, change protection, or close a hazard. Keep Local Demo mode available until this entire gate passes.
+## 3. Frontend environment
+
+The local `.env.local` file contains the project URL and **publishable** key and is ignored by Git. For another machine, create the same file beside `package.json`:
+
+~~~text
+VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_KEY
+~~~
+
+Restart Vite after changing environment variables. These `VITE_` values are sent to the browser. Never put a secret/service-role key in them. The secret key previously shared in chat should be deleted or rotated in Supabase Settings → API Keys before using real data.
+
+## 4. Test the cloud workflow
+
+1. Run `npm install` and `npm run dev`. Click **Connect cloud** and sign in as the worker. Submit a report. The receipt must appear only after the private uploads and database call succeed.
+2. On another browser or device, sign in as the supervisor. The report should appear through Realtime or within the 30-second fallback refresh. **Refresh** is available in the header. Record containment, physical protection, corrective work, and completion.
+3. On a third browser or device, sign in as the reviewer. Record a simulated inspection outcome. Only this role can close or reject the report.
+4. Refresh the worker device and confirm status, history, and private audio playback. Test **Problem Still Exists** on a closed report.
+5. Sign in with each role and attempt the other roles' actions. They must fail. An unauthenticated browser must not list reports or private media. Verify the Storage bucket remains private.
+
+Cloud write errors are shown and do not fall back to local success. The local demo remains available through the header switch. The app is a single-workplace pilot; production use still requires site membership, formal reviewer authorization, anonymity review, retention policy, and authorized on-site inspection procedures.

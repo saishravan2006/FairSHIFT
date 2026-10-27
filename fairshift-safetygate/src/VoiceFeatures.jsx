@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {Mic,Square,Trash2,Volume2} from 'lucide-react';
 import {loadAudio} from './audioStore';
+import {signedMediaUrl} from './cloud';
 
 const MAX_SECONDS = 60;
 const seconds = value => Math.floor(value / 60) + ':' + String(value % 60).padStart(2, '0');
@@ -42,7 +43,7 @@ export function SpeakButton({text, lang, compact = false, label}) {
   return <span className={'speakWrap ' + (compact ? 'compact' : '')}><button type="button" className="speakButton" onClick={speak} aria-label={label || (lang === 'ta' ? 'கேளுங்கள்' : 'Listen')} title={label || (lang === 'ta' ? 'கேளுங்கள்' : 'Listen')}><Volume2 size={18}/>{!compact && <span>{lang === 'ta' ? 'கேளுங்கள்' : 'Listen'}</span>}</button>{message && <small className="speechMessage" role="status">{message}</small>}</span>;
 }
 
-export function VoiceRecorder({label, lang, clip, onChange, anonymous = false}) {
+export function VoiceRecorder({label, lang, clip, onChange, anonymous = false, cloudMode = false}) {
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState('');
@@ -108,7 +109,9 @@ export function VoiceRecorder({label, lang, clip, onChange, anonymous = false}) 
   }
   return <div className={'voiceRecorder ' + (recording ? 'isRecording' : '')}>
     <div className="voiceHeading"><Mic size={19}/><strong>{label}</strong></div>
-    {anonymous && <p className="voicePrivacy">{lang === 'ta' ? 'உங்கள் குரல் அடையாளத்தை வெளிப்படுத்தலாம். இந்தச் சாதனத்தில் ஒலி சேமிக்கப்படும். உரை அல்லது தேர்வுகளையும் பயன்படுத்தலாம்.' : 'Your voice may identify you. Audio stays on this device. You can use text or answer buttons instead.'}</p>}
+    {anonymous && <p className="voicePrivacy">{cloudMode
+      ? (lang === 'ta' ? 'உங்கள் குரல் உங்கள் அடையாளத்தை வெளிப்படுத்தலாம். ஒலி தனிப்பட்ட சேமிப்பகத்தில் பதிவேற்றப்படும்.' : 'Your voice may identify you. Audio will be uploaded to private cloud storage.')
+      : (lang === 'ta' ? 'உங்கள் குரல் அடையாளத்தை வெளிப்படுத்தலாம். இந்தச் சாதனத்தில் ஒலி சேமிக்கப்படும். உரை அல்லது தேர்வுகளையும் பயன்படுத்தலாம்.' : 'Your voice may identify you. Audio stays on this device. You can use text or answer buttons instead.')}</p>}
     {recording ? <div className="recordingRow"><span className="recordingStatus" role="status"><i/>{lang === 'ta' ? 'பதிவு நடக்கிறது' : 'Recording'} · {seconds(elapsed)} / 1:00</span><button type="button" className="recordButton stop" onClick={stop}><Square size={20}/>{lang === 'ta' ? 'நிறுத்து' : 'Stop'}</button></div>
       : <button type="button" className="recordButton" onClick={start}><Mic size={22}/>{lang === 'ta' ? 'பதிவைத் தொடங்கு' : 'Start recording'}</button>}
     {clip && !recording && <div className="recordingPreview"><span>{lang === 'ta' ? 'உங்கள் பதிவு' : 'Your recording'} · {seconds(clip.duration)}</span><audio controls preload="metadata" src={clip.url} aria-label={label}/><button type="button" className="deleteRecording" onClick={() => onChange(null)}><Trash2 size={17}/>{lang === 'ta' ? 'நீக்கு' : 'Delete and re-record'}</button></div>}
@@ -122,11 +125,11 @@ export function AudioEvidence({reference, label, lang}) {
   useEffect(() => {
     let active = true;
     let objectUrl = '';
-    loadAudio(reference.id).then(blob => {
+    (reference.storagePath ? signedMediaUrl(reference.storagePath) : loadAudio(reference.id)).then(result => {
       if (!active) return;
-      if (!blob) { setError(lang === 'ta' ? 'ஒலிப்பதிவு கிடைக்கவில்லை.' : 'Recording unavailable on this device.'); return; }
-      objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
+      if (!result) { setError(lang === 'ta' ? 'ஒலிப்பதிவு கிடைக்கவில்லை.' : 'Recording unavailable.'); return; }
+      if (reference.storagePath) setUrl(result);
+      else { objectUrl = URL.createObjectURL(result); setUrl(objectUrl); }
     }).catch(() => { if (active) setError(lang === 'ta' ? 'ஒலிப்பதிவைத் திறக்க முடியவில்லை.' : 'Could not load recording.'); });
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [reference.id, lang]);

@@ -18,6 +18,10 @@ npm run build
 npm run preview
 ~~~
 
+## Modes
+
+**Local Demo** uses browser-local data and simulated role buttons. **Cloud** requires the [Supabase setup](SUPABASE_SETUP.md), a worker/supervisor/reviewer Auth account, and the publishable key in ignored `.env.local`. Use **Connect cloud** to sign in. Cloud reports stay separate from local samples. Realtime updates and a 30-second fallback refresh keep signed-in views current; the header also has **Refresh**. A failed cloud write shows an error and never creates a local success receipt.
+
 ## Demo workflow
 
 The role buttons simulate three roles in one browser. The home screen includes two sample reports.
@@ -33,7 +37,7 @@ The role buttons simulate three roles in one browser. The home screen includes t
 - Every worker report question has a Listen button. Hazard, workplace, warning, and selected location answers can also be played. Playback uses the browser's speech synthesis voice matching the selected language. When no Tamil voice is installed, the app states that limitation and does not substitute English speech.
 - The description and safety-warning steps have separate, large microphone controls. Permission is requested only when Start recording is tapped. A worker can stop, replay, delete, and re-record. Recording stops automatically at 60 seconds. The browser chooses a supported format, preferring low-bitrate Opus.
 - A spoken safety answer without a selected option is saved as **Requires review**. The app does not infer a structured answer from speech.
-- After a successful local save, the receipt provides spoken confirmation. Report details provide optional spoken status and playback for attached recordings. Supervisors can play recordings from the report and timeline.
+- After a successful save, the receipt provides spoken confirmation. Report details provide optional spoken status and playback for attached recordings. In cloud mode, recordings use private Storage and authorized signed URLs.
 - Voice may reveal identity even on an anonymous report. The worker sees this warning with a Listen button and can use text, structured answers, or assisted reporting instead.
 
 For the construction sample, the worker could not safely approach exposed wiring, so no warning board was placed. For the hospital sample, a safety representative used a shared device after a warning sign was placed safely.
@@ -44,9 +48,9 @@ The initial rule-based classification uses the selected hazard category. Exposed
 
 ## Persistence and security boundaries
 
-This build runs in **local demo mode**. Reports, events, protection history, and image data URLs persist in browser localStorage. Audio persists as Blobs in browser IndexedDB and is referenced by ID from the report and event record. The app only shows a successful submission after all attached audio and the report have been saved locally. It has no database connection, private server-side audio storage, role authentication, cross-device synchronization, notifications, or tamper-resistant audit log. All three roles are simulated in one browser; reviewer identity is a demo entry, not authenticated. Anonymous mode omits the worker name from the stored report, but a voice can still identify someone and this is not a production anonymity guarantee. A shared browser exposes its local records and recordings to anyone who can use it. Photos are limited to 1 MB to reduce localStorage failures. The UI shows an error if storage fills. Reset demo data also clears locally stored audio.
+In **Local Demo**, reports, events, protection history, and image data URLs persist in browser localStorage. Audio persists as Blobs in IndexedDB. All three roles are simulated in one browser; a shared browser exposes its local records and recordings to anyone who can use it. Reset demo data clears locally stored audio.
 
-The included [schema.sql](schema.sql) is a starting schema for a future Supabase-backed service. It is **not connected to this frontend**. It includes recording metadata and private storage paths. Row-level security is enabled and no public access policies are granted. Follow [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for project, role, storage, and acceptance steps. Do not add a Supabase key to the frontend until authenticated roles, server-side transition rules, private evidence storage, and safe row policies are configured and tested. A production deployment also needs append-only event enforcement, privacy review, and site-specific inspection procedures before data access is enabled. Supabase project URL and publishable/anon key are pending from the project owner; never use a service-role key in the browser.
+In **Cloud**, Supabase Auth fixes the user's role. Postgres RLS restricts reads; server-side functions validate transitions and write history. Photos and voice use a private bucket. The project owner must run [schema.sql](schema.sql) and [cloud_setup.sql](cloud_setup.sql) and assign Auth roles before this can be tested live. The secret key is never used by the frontend. Anonymous mode hides the worker name in reports, but a voice can still identify someone. This pilot is for one workplace and is not a production anonymity guarantee. A production deployment needs organizational scoping, privacy review, retention rules, and site-specific inspection procedures.
 
 **Safety:** Reporting is not an emergency response system. Workers should move to safety and follow workplace emergency procedures. They should never approach a dangerous area to place a sign or take a photo. Images do not prove that a hazard has been removed. High-risk closure requires an authorized physical inspection in real deployments. The reviewer action here records a simulated decision only.
 
@@ -55,7 +59,9 @@ The included [schema.sql](schema.sql) is a starting schema for a future Supabase
 - src/main.jsx — report form, priority rules, role views, workflow, local persistence
 - src/VoiceFeatures.jsx — speech prompts, MediaRecorder controls, saved recording playback
 - src/audioStore.js — IndexedDB recording storage
+- src/cloud.js — authenticated Supabase client, private uploads, signed media, refresh
 - src/style.css — responsive presentation
-- schema.sql — future server-side schema with RLS default-deny posture
+- schema.sql — base tables with RLS default-deny posture
+- cloud_setup.sql — pilot RLS policies, guarded actions, private bucket, Realtime
 - SUPABASE_SETUP.md — role, storage, and cloud deployment steps
 - index.html — Vite entry point

@@ -1,6 +1,5 @@
--- Future Supabase/PostgreSQL schema. The current app uses browser localStorage only.
--- Run in a private Supabase project after designing authentication and server-side access.
--- RLS is enabled with no public policies, so anon/authenticated API roles have no access.
+-- FairShift base schema. Run this before cloud_setup.sql in a fresh pilot project.
+-- RLS is enabled with no public policies until cloud_setup.sql is applied.
 
 create extension if not exists pgcrypto;
 
